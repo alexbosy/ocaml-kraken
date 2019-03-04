@@ -10,7 +10,17 @@
  (public_name kraken-rest)
  (modules kraken_rest)
  (preprocess (pps ppx_sexp_conv))
- (libraries kraken ptime uri ocplib-resto ocplib-resto-cohttp ocplib-resto-json ocplib-json-typed))
+ (libraries
+  base64
+  digestif.c
+  kraken
+  ptime
+  uri
+  logs-async
+  conduit-async
+  httpaf
+  httpaf-async
+  ocplib-json-typed))
 
 (library
  (name        kraken_ws)
