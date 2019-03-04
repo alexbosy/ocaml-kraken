@@ -8,11 +8,12 @@ type _ meth =
   | Get : get meth
   | Post : post meth
 
-type ('meth, 'encoding) service = {
+type ('meth, 'a) service = {
   meth : 'meth meth ;
   url : Uri.t ;
   req : Request.t ;
-  encoding: 'encoding Json_encoding.encoding ;
+  encoding: 'a Json_encoding.encoding ;
+  pp : Format.formatter -> 'a -> unit ;
   params : (string * string list) list ;
 }
 
@@ -21,9 +22,10 @@ type auth = {
   secret : string ;
 }
 
-type 'a kraken_result = ('a, string list) result
+type error =
+  | Http of Client_connection.error
+  | Kraken of string list
 
-val time : (get, Ptime.t kraken_result) service
+val time : (get, Ptime.t) service
 
-val request : ?auth:auth -> (_, 'a) service ->
-  ('a, Client_connection.error) result Deferred.t
+val request : ?auth:auth -> (_, 'a) service -> ('a, error) result Deferred.t

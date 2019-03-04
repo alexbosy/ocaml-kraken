@@ -14,11 +14,12 @@ type _ meth =
   | Get : get meth
   | Post : post meth
 
-type ('meth, 'encoding) service = {
+type ('meth, 'a) service = {
   meth : 'meth meth ;
   url : Uri.t ;
   req : Request.t ;
-  encoding: 'encoding Json_encoding.encoding ;
+  encoding : 'a Json_encoding.encoding ;
+  pp : Format.formatter -> 'a -> unit ;
   params : (string * string list) list ;
 }
 
@@ -28,10 +29,23 @@ let src =
 let base_url =
   Uri.make ~scheme:"https" ~host:"api.kraken.com" ()
 
-let get ?(params=[]) encoding url =
+type error =
+  | Http of Client_connection.error
+  | Kraken of string list
+
+let result_encoding encoding =
+  let open Json_encoding in
+  conv
+    (function Error e -> (e, None) | Ok v -> [], Some v)
+    (function (e, None) -> Error e | (_, Some r) -> Ok r)
+    (obj2
+       (req "error" (list string))
+       (opt "result" encoding))
+
+let get ?(params=[]) encoding pp url =
   let target = Uri.path_and_query url in
   let req = Request.create `GET target in
-  { meth = Get ; url ; req ; encoding ; params }
+  { meth = Get ; url ; req ; encoding ; pp ; params }
 
 (* let post ?(params=[]) encoding url =
  *   let target = Uri.path_and_query url in
@@ -56,18 +70,23 @@ let write_iovec w iovec =
 
 let request (type a) ?auth (service : (a, 'b) service) =
   let error_iv = Ivar.create () in
-  let response = Ivar.create () in
+  let resp_iv = Ivar.create () in
   let error_handler err =
-    Ivar.fill error_iv (Error err)
+    Ivar.fill error_iv (Error (Http err))
   in
   let response_handler _response body =
     let buffer = Buffer.create 32 in
     let on_eof () =
-      let resp_json = Ezjsonm.from_string (Buffer.contents buffer) in
-      Ivar.fill response (Ok (Json_encoding.destruct service.encoding resp_json))
+      Logs.err ~src (fun m -> m "response: got EOF while reading body")
     in
     let on_read buf ~off ~len =
-      Buffer.add_string buffer (Bigstringaf.substring buf ~off ~len)
+      Buffer.add_string buffer (Bigstringaf.substring buf ~off ~len) ;
+      let buf_str = Buffer.contents buffer in
+      Logs.debug ~src (fun m -> m "%s" buf_str) ;
+      let resp_json = Ezjsonm.from_string buf_str in
+      match (Json_encoding.destruct (result_encoding service.encoding) resp_json) with
+      | Error e -> Ivar.fill error_iv (Error (Kraken e))
+      | Ok v -> Ivar.fill resp_iv (Ok v)
     in
     Body.schedule_read body ~on_eof ~on_read in
   let headers = match service.params with
@@ -86,6 +105,10 @@ let request (type a) ?auth (service : (a, 'b) service) =
         "API-Sign", Base64.encode_exn a ;
       ]
   in
+  let headers = Headers.add_list headers [
+      "User-Agent", "ocaml-kraken" ;
+      "Host", Uri.host_with_default ~default:"api.kraken.com" service.url ;
+    ] in
   let req = { service.req with headers } in
   Conduit_async.V3.with_connection_uri service.url begin fun _ r w ->
     let body, conn =
@@ -105,13 +128,11 @@ let request (type a) ?auth (service : (a, 'b) service) =
       | `Read -> begin
           Reader.read_one_chunk_at_a_time r
             ~handle_chunk:begin fun buf ~pos ~len ->
-              Logs_async.debug ~src (fun m -> m "READ %d" len) >>= fun () ->
               let nb_read = Client_connection.read conn buf ~off:pos ~len in
               return (`Stop_consumed ((), nb_read))
             end >>= function
-          | `Eof
-          | `Eof_with_unconsumed_data _ ->
-            raise Exit
+          | `Eof -> Deferred.unit
+          | `Eof_with_unconsumed_data _ -> Deferred.unit
           | `Stopped () ->
             read_response ()
         end in
@@ -126,7 +147,7 @@ let request (type a) ?auth (service : (a, 'b) service) =
     end ;
     flush_req () ;
     don't_wait_for (read_response ()) ;
-    Deferred.any [Ivar.read response ;
+    Deferred.any [Ivar.read resp_iv ;
                   Ivar.read error_iv]
   end
 
@@ -137,17 +158,6 @@ let request (type a) ?auth (service : (a, 'b) service) =
  *   extra : string option ;
  * } *)
 
-let result_encoding encoding =
-  let open Json_encoding in
-  conv
-    (function Error e -> (e, None) | Ok v -> [], Some v)
-    (function (e, None) -> Error e | (_, Some r) -> Ok r)
-    (obj2
-       (req "error" (list string))
-       (opt "result" encoding))
-
-type 'a kraken_result = ('a, string list) result
-
 let time =
   let time_encoding =
     let open Json_encoding in
@@ -156,6 +166,6 @@ let time =
       (fun ((), t) -> match Ptime.of_float_s (Int64.to_float t) with
          | None -> invalid_arg "time_encoding"
          | Some t -> t)
-    (merge_objs unit (obj1 (req "unixtime" int53)))
+      (merge_objs unit (obj1 (req "unixtime" int53)))
   in
-  get (result_encoding time_encoding) (Uri.with_path base_url "0/public/Time")
+  get time_encoding Ptime.pp (Uri.with_path base_url "0/public/Time")
