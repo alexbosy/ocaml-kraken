@@ -47,20 +47,22 @@ let get ?(params=[]) encoding pp url =
   let req = Request.create `GET target in
   { meth = Get ; url ; req ; encoding ; pp ; params }
 
-(* let post ?(params=[]) encoding url =
- *   let target = Uri.path_and_query url in
- *   let req = Request.create `POST target in
- *   { meth = Post ; url ; req ; encoding ; params } *)
+let post ?(params=[]) encoding pp url =
+  let target = Uri.path_and_query url in
+  let req = Request.create `POST target in
+  { meth = Post ; url ; req ; encoding ; pp ; params }
 
 let authstr ~secret service =
   let nonce = Time_ns.(to_int63_ns_since_epoch (now ())) in
-  let encoded = Uri.encoded_of_query service.params in
+  let nonce_p = ("nonce", [Int63.to_string nonce]) in
+  let encoded = Uri.encoded_of_query (nonce_p :: service.params) in
+  let open Digestif in
   let digest =
-    Digestif.SHA256.(digest_string ((Int63.to_string nonce) ^ encoded) |>
-                     to_raw_string) in
-  nonce,
-  Digestif.SHA512.(hmac_string ~key:secret (Uri.path service.url ^ digest) |>
-                   to_raw_string)
+    SHA256.(digest_string ((Int63.to_string nonce) ^ encoded) |>
+            to_raw_string) in
+  String.length encoded, nonce_p,
+  SHA512.(hmac_string ~key:secret (Uri.path service.url ^ digest) |>
+          to_raw_string)
 
 let write_iovec w iovec =
   List.fold_left iovec ~init:0 ~f:begin fun a { Faraday.buffer ; off ; len } ->
@@ -89,20 +91,17 @@ let request (type a) ?auth (service : (a, 'b) service) =
       | Ok v -> Ivar.fill resp_iv (Ok v)
     in
     Body.schedule_read body ~on_eof ~on_read in
-  let headers = match service.params with
-    | [] -> service.req.headers
-    | _ ->
-      Headers.add service.req.headers
-        "content-type" "application/x-www-form-urlencoded" in
   let params, headers = match service.meth, auth with
-    | Get, _ -> service.params, headers
+    | Get, _ -> service.params, service.req.headers
     | Post, None -> invalid_arg "post service needs auth"
     | Post, Some { key ; secret } ->
-      let nonce, a = authstr ~secret service in
-      ("nonce", [Int63.to_string nonce]) :: service.params,
-      Headers.add_list headers [
+      let content_length, nonce_p, a = authstr ~secret service in
+      nonce_p :: service.params,
+      Headers.add_list service.req.headers [
         "API-Key", key ;
         "API-Sign", Base64.encode_exn a ;
+        "Content-Type", "application/x-www-form-urlencoded" ;
+        "Content-Length", string_of_int content_length ;
       ]
   in
   let headers = Headers.add_list headers [
@@ -139,11 +138,12 @@ let request (type a) ?auth (service : (a, 'b) service) =
     Logs_async.debug ~src
       (fun m -> m "%a" Request.pp_hum req) >>= fun () ->
     begin
-      match params with
-      | [] -> ()
-      | params ->
+      match service.meth, params with
+      | Post, params ->
         let encoded_params = Uri.encoded_of_query params in
+        Logs.debug ~src (fun m -> m "%s" encoded_params) ;
         Body.write_string body encoded_params
+      | _ -> ()
     end ;
     flush_req () ;
     don't_wait_for (read_response ()) ;
@@ -169,3 +169,7 @@ let time =
       (merge_objs unit (obj1 (req "unixtime" int53)))
   in
   get time_encoding Ptime.pp (Uri.with_path base_url "0/public/Time")
+
+let account_balance =
+  post Json_encoding.unit
+    (fun _ppf () -> ()) (Uri.with_path base_url "0/private/Balance")
