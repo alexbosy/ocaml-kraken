@@ -121,7 +121,7 @@ let request (type a) ?auth (service : (a, 'b) service) =
       | `Yield ->
         Client_connection.yield_writer conn flush_req ;
       | `Close _ -> () in
-    let rec read_response () =
+    let read_response () =
       match Client_connection.next_read_operation conn with
       | `Close -> Deferred.unit
       | `Read -> begin
@@ -132,8 +132,7 @@ let request (type a) ?auth (service : (a, 'b) service) =
             end >>= function
           | `Eof -> Deferred.unit
           | `Eof_with_unconsumed_data _ -> Deferred.unit
-          | `Stopped () ->
-            read_response ()
+          | `Stopped () -> Deferred.unit
         end in
     Logs_async.debug ~src
       (fun m -> m "%a" Request.pp_hum req) >>= fun () ->
@@ -170,6 +169,24 @@ let time =
   in
   get time_encoding Ptime.pp (Uri.with_path base_url "0/public/Time")
 
+
+type balances = (string * float) list [@@deriving sexp]
+
+let balances_encoding =
+  let open Json_encoding in
+  conv
+    (fun s -> `O (List.map ~f:(fun (k, v) -> (k, `Float v)) s))
+    (function
+      | `O vs ->
+        List.map ~f:(function
+            | k, `String v -> k, float_of_string v
+            | _ -> invalid_arg "balance_encoding") vs
+      | #Ezjsonm.value -> invalid_arg "balance_encoding")
+    any_ezjson_value
+
+let pp_balance ppf t =
+  Format.fprintf ppf "%a" Sexp.pp (sexp_of_balances t)
+
 let account_balance =
-  post Json_encoding.unit
-    (fun _ppf () -> ()) (Uri.with_path base_url "0/private/Balance")
+  post balances_encoding pp_balance
+    (Uri.with_path base_url "0/private/Balance")

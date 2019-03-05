@@ -27,6 +27,8 @@ type error =
   | Kraken of string list
 
 val time : (get, Ptime.t) service
-val account_balance : (post, unit) service
+
+type balances = (string * float) list [@@deriving sexp]
+val account_balance : (post, balances) service
 
 val request : ?auth:auth -> (_, 'a) service -> ('a, error) result Deferred.t
