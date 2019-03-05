@@ -1,5 +1,8 @@
 open Sexplib.Std
 
+let strfloat =
+  Json_encoding.(conv string_of_float float_of_string string)
+
 module Ezjsonm_encoding = struct
   include Json_encoding.Make(Json_repr.Ezjsonm)
 
@@ -46,11 +49,11 @@ end
 
 module OrdStatus = struct
   type t = [
-      | `order_status_pending_open
-      | `order_status_open
-      | `order_status_filled
-      | `order_status_canceled
-    ]
+    | `order_status_pending_open
+    | `order_status_open
+    | `order_status_filled
+    | `order_status_canceled
+  ]
 
   let encoding : t Json_encoding.encoding =
     let open Json_encoding in
@@ -73,8 +76,37 @@ module Balance = struct
     positions_value : float ;
     equity : float ;
     free_margin : float ;
-    margin_level : float ;
-  }
+  } [@@deriving sexp]
+
+  let pp ppf t =
+    Format.fprintf ppf "%a" Sexplib.Sexp.pp (sexp_of_t t)
+
+  let encoding =
+    let open Json_encoding in
+    conv
+      (fun { equivalent_balance ;
+             trade_balance ; total_margin ;
+             pnl ; positions_cost ; positions_value ;
+             equity ; free_margin } ->
+        (equivalent_balance, trade_balance,
+         total_margin, pnl, positions_cost, positions_value,
+         equity, free_margin))
+      (fun (equivalent_balance, trade_balance,
+            total_margin, pnl, positions_cost, positions_value,
+            equity, free_margin) ->
+        { equivalent_balance ;
+          trade_balance ; total_margin ;
+          pnl ; positions_cost ; positions_value ;
+          equity ; free_margin })
+      (obj8
+         (req "eb" strfloat)
+         (req "tb" strfloat)
+         (req "m" strfloat)
+         (req "n" strfloat)
+         (req "c" strfloat)
+         (req "v" strfloat)
+         (req "e" strfloat)
+         (req "mf" strfloat))
 end
 
 module Order = struct

@@ -1,5 +1,6 @@
 open Async
 open Httpaf
+open Kraken
 
 type get
 type post
@@ -30,5 +31,7 @@ val time : (get, Ptime.t) service
 
 type balances = (string * float) list [@@deriving sexp]
 val account_balance : (post, balances) service
+val trade_balance : (post, Balance.t) service
+val closed_orders : (post, Balance.t) service
 
 val request : ?auth:auth -> (_, 'a) service -> ('a, error) result Deferred.t

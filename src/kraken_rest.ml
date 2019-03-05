@@ -76,7 +76,8 @@ let request (type a) ?auth (service : (a, 'b) service) =
   let error_handler err =
     Ivar.fill error_iv (Error (Http err))
   in
-  let response_handler _response body =
+  let response_handler response body =
+    Logs.debug ~src (fun m -> m "%a" Response.pp_hum response) ;
     let buffer = Buffer.create 32 in
     let on_eof () =
       Logs.err ~src (fun m -> m "response: got EOF while reading body")
@@ -121,7 +122,7 @@ let request (type a) ?auth (service : (a, 'b) service) =
       | `Yield ->
         Client_connection.yield_writer conn flush_req ;
       | `Close _ -> () in
-    let read_response () =
+    let rec read_response () =
       match Client_connection.next_read_operation conn with
       | `Close -> Deferred.unit
       | `Read -> begin
@@ -132,7 +133,7 @@ let request (type a) ?auth (service : (a, 'b) service) =
             end >>= function
           | `Eof -> Deferred.unit
           | `Eof_with_unconsumed_data _ -> Deferred.unit
-          | `Stopped () -> Deferred.unit
+          | `Stopped () -> read_response ()
         end in
     Logs_async.debug ~src
       (fun m -> m "%a" Request.pp_hum req) >>= fun () ->
@@ -190,3 +191,13 @@ let pp_balance ppf t =
 let account_balance =
   post balances_encoding pp_balance
     (Uri.with_path base_url "0/private/Balance")
+
+open Kraken
+
+let trade_balance =
+  post Balance.encoding Balance.pp
+    (Uri.with_path base_url "0/private/TradeBalance")
+
+let closed_orders =
+  post Balance.encoding Balance.pp
+    (Uri.with_path base_url "0/private/ClosedOrders")

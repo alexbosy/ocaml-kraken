@@ -1,3 +1,5 @@
+val strfloat : float Json_encoding.encoding
+
 module Ezjsonm_encoding : sig
   include module type of Json_encoding.Make(Json_repr.Ezjsonm)
   val destruct_safe : 'a Json_encoding.encoding -> Ezjsonm.value -> 'a
@@ -46,8 +48,10 @@ module Balance : sig
     positions_value : float ;
     equity : float ;
     free_margin : float ;
-    margin_level : float ;
-  }
+  } [@@deriving sexp]
+
+  val pp : Format.formatter -> t -> unit
+  val encoding : t Json_encoding.encoding
 end
 
 module Order : sig

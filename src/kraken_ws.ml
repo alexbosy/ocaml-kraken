@@ -1,9 +1,6 @@
 open Sexplib.Std
 open Kraken
 
-let strfloat =
-  Json_encoding.(conv string_of_float float_of_string string)
-
 type subscription =
   | Ticker
   | OHLC of int
