@@ -78,20 +78,25 @@ let request (type a) ?auth (service : (a, 'b) service) =
   in
   let response_handler response body =
     Logs.debug ~src (fun m -> m "%a" Response.pp_hum response) ;
-    let buffer = Buffer.create 32 in
-    let on_eof () =
-      Logs.err ~src (fun m -> m "response: got EOF while reading body")
-    in
-    let on_read buf ~off ~len =
-      Buffer.add_string buffer (Bigstringaf.substring buf ~off ~len) ;
-      let buf_str = Buffer.contents buffer in
-      Logs.debug ~src (fun m -> m "%s" buf_str) ;
-      let resp_json = Ezjsonm.from_string buf_str in
-      match (Json_encoding.destruct (result_encoding service.encoding) resp_json) with
-      | Error e -> Ivar.fill error_iv (Error (Kraken e))
-      | Ok v -> Ivar.fill resp_iv (Ok v)
-    in
-    Body.schedule_read body ~on_eof ~on_read in
+    match response with
+    | { Response.status = `OK ; _ } ->
+      let buffer = Buffer.create 32 in
+      let on_eof () =
+        let buf_str = Buffer.contents buffer in
+        Logs.debug ~src (fun m -> m "%s" buf_str) ;
+        let resp_json = Ezjsonm.from_string buf_str in
+        match (Json_encoding.destruct (result_encoding service.encoding) resp_json) with
+        | Error e -> Ivar.fill error_iv (Error (Kraken e))
+        | Ok v -> Ivar.fill resp_iv (Ok v)
+      in
+      let rec on_read buf ~off ~len =
+        Buffer.add_string buffer (Bigstringaf.substring buf ~off ~len) ;
+        Body.schedule_read body ~on_eof ~on_read
+      in
+      Body.schedule_read body ~on_eof ~on_read
+    | _ ->
+      Logs.err ~src (fun m -> m "Error response")
+  in
   let params, headers = match service.meth, auth with
     | Get, _ -> service.params, service.req.headers
     | Post, None -> invalid_arg "post service needs auth"
