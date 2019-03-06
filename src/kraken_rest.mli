@@ -33,7 +33,7 @@ type 'a assoc = (string * 'a) list [@@deriving sexp]
 
 val account_balance : (post, float assoc) service
 val trade_balance : (post, Balance.t) service
-val closed_orders : (post, Filled_order.t assoc) service
+val closed_orders : (post, Order.t assoc) service
 val trade_history : (post, Filled_order.t assoc) service
 
 val request : ?auth:auth -> (_, 'a) service -> ('a, error) result Deferred.t

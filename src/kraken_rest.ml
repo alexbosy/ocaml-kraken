@@ -86,7 +86,8 @@ let request (type a) ?auth (service : (a, 'b) service) =
         let buf_str = Buffer.contents buffer in
         Logs.debug ~src (fun m -> m "%s" buf_str) ;
         let resp_json = Ezjsonm.from_string buf_str in
-        match (Json_encoding.destruct (result_encoding service.encoding) resp_json) with
+        match (Ezjsonm_encoding.destruct_safe
+                 (result_encoding service.encoding) resp_json) with
         | Error e -> Ivar.fill error_iv (Error (Kraken e))
         | Ok v -> Ivar.fill resp_iv (Ok v)
       in
@@ -194,28 +195,34 @@ let balances_encoding =
 let pp_balance ppf t =
   Format.fprintf ppf "%a" Sexp.pp (sexp_of_assoc sexp_of_float t)
 
-let trade_encoding =
+let list_encoding encoding =
   let open Json_encoding in
   conv
     (fun s -> `O (List.map ~f:(fun (k, v) ->
-         (k, Json_encoding.construct Filled_order.encoding v)) s))
+         (k, Json_encoding.construct encoding v)) s))
     (function
       | `O vs ->
         List.map ~f:begin fun (k, v) ->
-          k, Json_encoding.destruct Filled_order.encoding v
+          k, Ezjsonm_encoding.destruct_safe encoding v
         end vs
-      | #Ezjsonm.value -> invalid_arg "balance_encoding")
+      | #Ezjsonm.value -> invalid_arg "list_encoding")
     any_ezjson_value
 
-let trade_encoding =
+let boxed_list_encoding name encoding =
   let open Json_encoding in
   conv (fun t -> t, 0l) (fun (t, _) -> t)
     (obj2
-       (req "trades" trade_encoding)
+       (req name (list_encoding encoding))
        (req "count" int32))
+
+let trade_encoding = boxed_list_encoding "trades" Filled_order.encoding
+let closed_encoding = boxed_list_encoding "closed" Order.encoding
 
 let pp_trade ppf t =
   Format.fprintf ppf "%a" Sexp.pp (sexp_of_assoc Filled_order.sexp_of_t t)
+
+let pp_closed ppf t =
+  Format.fprintf ppf "%a" Sexp.pp (sexp_of_assoc Order.sexp_of_t t)
 
 let account_balance =
   post balances_encoding pp_balance
@@ -228,7 +235,7 @@ let trade_balance =
     (Uri.with_path base_url "0/private/TradeBalance")
 
 let closed_orders =
-  post trade_encoding pp_trade
+  post closed_encoding pp_closed
     (Uri.with_path base_url "0/private/ClosedOrders")
 
 let trade_history =

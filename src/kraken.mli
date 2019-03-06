@@ -64,8 +64,8 @@ module Order : sig
     price2: float ;
     leverage: string ;
     order: string ;
-    close: string ;
-  }
+    close: string option ;
+  } [@@deriving sexp]
 
   type t = {
     status: OrdStatus.t ;
@@ -79,11 +79,14 @@ module Order : sig
     cost: float ;
     fee: float ;
     price: float ;
-    stopprice: float ;
-    limitprice: float ;
+    stopprice: float option ;
+    limitprice: float option ;
     misc: string ;
     oflags: string ;
-  }
+  } [@@deriving sexp]
+
+  val pp : Format.formatter -> t -> unit
+  val encoding : t Json_encoding.encoding
 end
 
 module Filled_order : sig
@@ -102,5 +105,6 @@ module Filled_order : sig
     misc: string ;
   } [@@deriving sexp]
 
+  val pp : Format.formatter -> t -> unit
   val encoding : t Json_encoding.encoding
 end

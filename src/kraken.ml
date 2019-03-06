@@ -73,7 +73,7 @@ module OrdStatus = struct
     | `order_status_open
     | `order_status_filled
     | `order_status_canceled
-  ]
+  ] [@@deriving sexp]
 
   let encoding =
     let open Json_encoding in
@@ -138,8 +138,8 @@ module Order = struct
     price2: float ;
     leverage: string ;
     order: string ;
-    close: string ;
-  }
+    close: string option ;
+  } [@@deriving sexp]
 
   let descr_encoding =
     let open Json_encoding in
@@ -160,7 +160,7 @@ module Order = struct
          (req "price2" strfloat)
          (req "leverage" string)
          (req "order" string)
-         (req "close" string))
+         (opt "close" string))
 
   type t = {
     status: OrdStatus.t ;
@@ -174,15 +174,19 @@ module Order = struct
     cost: float ;
     fee: float ;
     price: float ;
-    stopprice: float ;
-    limitprice: float ;
+    stopprice: float option ;
+    limitprice: float option ;
     misc: string ;
     oflags: string ;
-  }
+  } [@@deriving sexp]
+
+  let pp ppf t =
+    Format.fprintf ppf "%a" Sexplib.Sexp.pp (sexp_of_t t)
 
   let otherfields_encoding =
     let open Json_encoding in
-    obj3
+    obj4
+      (req "descr" descr_encoding)
       (req "status" OrdStatus.encoding)
       (req "misc" string)
       (req "oflags" string)
@@ -203,18 +207,29 @@ module Order = struct
       (req "cost" strfloat)
       (req "fee" strfloat)
       (req "price" strfloat)
-      (req "stopprice" strfloat)
-      (req "limitprice" strfloat)
+      (opt "stopprice" strfloat)
+      (opt "limitprice" strfloat)
 
   let encoding =
     let open Json_encoding in
     conv
-      (((), ))
-      ()
+      (fun { status ; opentm ; closetm ; starttm ; expiretm ;
+             descr ; vol ; vol_exec ; cost ; fee ; price ;
+             stopprice ; limitprice ; misc ; oflags
+           } ->
+        (((), (descr, status, misc, oflags)),
+         (opentm, closetm, starttm, expiretm)),
+        (vol, vol_exec, cost, fee, price, stopprice, limitprice))
+      (fun ((((), (descr, status, misc, oflags)),
+             (opentm, closetm, starttm, expiretm)),
+            (vol, vol_exec, cost, fee, price, stopprice, limitprice)) ->
+        { status ; opentm ; closetm ; starttm ; expiretm ;
+          descr ; vol ; vol_exec ; cost ; fee ; price ;
+          stopprice ; limitprice ; misc ; oflags
+        })
       (merge_objs
          (merge_objs
-            (merge_objs
-               (merge_objs unit otherfields_encoding) descr_encoding)
+            (merge_objs unit otherfields_encoding)
             times_encoding)
          floats_encoding)
 end
@@ -234,6 +249,9 @@ module Filled_order = struct
     margin: float ;
     misc: string ;
   } [@@deriving sexp]
+
+  let pp ppf t =
+    Format.fprintf ppf "%a" Sexplib.Sexp.pp (sexp_of_t t)
 
   let encoding =
     let open Json_encoding in
