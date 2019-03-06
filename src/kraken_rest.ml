@@ -1,6 +1,7 @@
 open Core
 open Async
 open Httpaf
+open Kraken
 
 type auth = {
   key : string ;
@@ -176,7 +177,7 @@ let time =
   get time_encoding Ptime.pp (Uri.with_path base_url "0/public/Time")
 
 
-type balances = (string * float) list [@@deriving sexp]
+type 'a assoc = (string * 'a) list [@@deriving sexp]
 
 let balances_encoding =
   let open Json_encoding in
@@ -191,7 +192,30 @@ let balances_encoding =
     any_ezjson_value
 
 let pp_balance ppf t =
-  Format.fprintf ppf "%a" Sexp.pp (sexp_of_balances t)
+  Format.fprintf ppf "%a" Sexp.pp (sexp_of_assoc sexp_of_float t)
+
+let trade_encoding =
+  let open Json_encoding in
+  conv
+    (fun s -> `O (List.map ~f:(fun (k, v) ->
+         (k, Json_encoding.construct Filled_order.encoding v)) s))
+    (function
+      | `O vs ->
+        List.map ~f:begin fun (k, v) ->
+          k, Json_encoding.destruct Filled_order.encoding v
+        end vs
+      | #Ezjsonm.value -> invalid_arg "balance_encoding")
+    any_ezjson_value
+
+let trade_encoding =
+  let open Json_encoding in
+  conv (fun t -> t, 0l) (fun (t, _) -> t)
+    (obj2
+       (req "trades" trade_encoding)
+       (req "count" int32))
+
+let pp_trade ppf t =
+  Format.fprintf ppf "%a" Sexp.pp (sexp_of_assoc Filled_order.sexp_of_t t)
 
 let account_balance =
   post balances_encoding pp_balance
@@ -204,5 +228,9 @@ let trade_balance =
     (Uri.with_path base_url "0/private/TradeBalance")
 
 let closed_orders =
-  post Balance.encoding Balance.pp
+  post trade_encoding pp_trade
     (Uri.with_path base_url "0/private/ClosedOrders")
+
+let trade_history =
+  post trade_encoding pp_trade
+    (Uri.with_path base_url "0/private/TradesHistory")

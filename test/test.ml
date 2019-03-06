@@ -36,10 +36,11 @@ let wrap_request ?(speed=`Quick) n service =
   end
 
 let rest = [
-  wrap_request "time" time ;
-  wrap_request "account_balance" account_balance ;
-  wrap_request "trade_balance" trade_balance ;
+  (* wrap_request "time" time ;
+   * wrap_request "account_balance" account_balance ;
+   * wrap_request "trade_balance" trade_balance ; *)
   wrap_request "closed_orders" closed_orders ;
+  wrap_request "trade_history" trade_history ;
 ]
 
 let () =
