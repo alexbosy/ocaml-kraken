@@ -217,12 +217,16 @@ let boxed_list_encoding name encoding =
 
 let trade_encoding = boxed_list_encoding "trades" Filled_order.encoding
 let closed_encoding = boxed_list_encoding "closed" Order.encoding
+let ledger_encoding = boxed_list_encoding "ledger" Ledger.encoding
 
 let pp_trade ppf t =
   Format.fprintf ppf "%a" Sexp.pp (sexp_of_assoc Filled_order.sexp_of_t t)
 
 let pp_closed ppf t =
   Format.fprintf ppf "%a" Sexp.pp (sexp_of_assoc Order.sexp_of_t t)
+
+let pp_ledger ppf t =
+  Format.fprintf ppf "%a" Sexp.pp (sexp_of_assoc Ledger.sexp_of_t t)
 
 let account_balance =
   post balances_encoding pp_balance
@@ -241,3 +245,7 @@ let closed_orders =
 let trade_history =
   post trade_encoding pp_trade
     (Uri.with_path base_url "0/private/TradesHistory")
+
+let ledgers =
+  post ledger_encoding pp_ledger
+    (Uri.with_path base_url "0/private/Ledgers")

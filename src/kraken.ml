@@ -278,3 +278,49 @@ module Filled_order = struct
             (req "misc" string)
             (opt "postxid" string)))
 end
+
+module Ledger = struct
+  type t = {
+    refid : string ;
+    time : Ptime.t ;
+    typ : [`deposit|`withdrawal|`trade|`margin|`transfer] ;
+    aclass : [`currency] ;
+    asset : string ;
+    amount : float ;
+    fee : float ;
+    balance : float ;
+  } [@@deriving sexp]
+
+  let pp ppf t =
+    Format.fprintf ppf "%a" Sexplib.Sexp.pp (sexp_of_t t)
+
+  let typ_encoding =
+    let open Json_encoding in
+    string_enum [
+      "deposit", `deposit ;
+      "withdrawal", `withdrawal ;
+      "trade", `trade ;
+      "margin", `margin ;
+      "transfer", `transfer ;
+    ]
+
+  let aclass_encoding =
+    Json_encoding.string_enum ["currency", `currency]
+
+  let encoding =
+    let open Json_encoding in
+    conv
+      (fun { refid ; time ; typ ; aclass ; asset ; amount ; fee ; balance } ->
+         (refid, time, typ, aclass, asset, amount, fee, balance))
+      (fun (refid, time, typ, aclass, asset, amount, fee, balance) ->
+         { refid ; time ; typ ; aclass ; asset ; amount ; fee ; balance })
+      (obj8
+         (req "refid" string)
+         (req "time" Ptime.encoding)
+         (req "type" typ_encoding)
+         (req "aclass" aclass_encoding)
+         (req "asset" string)
+         (req "amount" strfloat)
+         (req "fee" strfloat)
+         (req "balance" strfloat))
+end

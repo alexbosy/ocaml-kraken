@@ -108,3 +108,19 @@ module Filled_order : sig
   val pp : Format.formatter -> t -> unit
   val encoding : t Json_encoding.encoding
 end
+
+module Ledger : sig
+  type t = {
+    refid : string ;
+    time : Ptime.t ;
+    typ : [`deposit|`withdrawal|`trade|`margin|`transfer] ;
+    aclass : [`currency] ;
+    asset : string ;
+    amount : float ;
+    fee : float ;
+    balance : float ;
+  } [@@deriving sexp]
+
+  val pp : Format.formatter -> t -> unit
+  val encoding : t Json_encoding.encoding
+end
